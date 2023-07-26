@@ -12,6 +12,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/users")
@@ -27,11 +28,20 @@ public class UserController {
     private static final String ALGORITHM = "AES";
     private static final String CIPHER_TRANSFORMATION = "AES/ECB/PKCS5Padding";
 
+    // Password strength regex pattern to enforce specific criteria.
+    private static final String PASSWORD_STRENGTH_PATTERN =
+            "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%^&+=])(?=\\S+$).{8,}$";
+
     @PostMapping("/post")
     public User createUser(@RequestBody User user) {
-        String encryptedPassword = encryptPassword(user.getPassword());
-        user.setPassword(encryptedPassword);
-        return userService.saveUser(user);
+        String password = user.getPassword();
+        if (isValidPassword(password)) {
+            String encryptedPassword = encryptPassword(password);
+            user.setPassword(encryptedPassword);
+            return userService.saveUser(user);
+        } else {
+            throw new IllegalArgumentException("Password does not meet the strength requirements.");
+        }
     }
 
     @GetMapping("/{id}")
@@ -61,15 +71,20 @@ public class UserController {
     public User updateUser(@PathVariable Long id, @RequestBody User user) {
         User existingUser = userService.findUserById(id);
         if (existingUser != null) {
-            existingUser.setUsername(user.getUsername());
-            existingUser.setPassword(user.getPassword());
-            String encryptedPassword = encryptPassword(existingUser.getPassword());
-            existingUser.setPassword(encryptedPassword);
-            User updatedUser = userService.updateUser(existingUser);
-            updatedUser.setPassword(decryptPassword(updatedUser.getPassword()));
-            return updatedUser;
+            String password = user.getPassword();
+            if (isValidPassword(password)) {
+                existingUser.setUsername(user.getUsername());
+                existingUser.setPassword(password);
+                String encryptedPassword = encryptPassword(password);
+                existingUser.setPassword(encryptedPassword);
+                User updatedUser = userService.updateUser(existingUser);
+                updatedUser.setPassword(decryptPassword(updatedUser.getPassword()));
+                return updatedUser;
+            } else {
+                throw new IllegalArgumentException("Password does not meet the strength requirements.");
+            }
         } else {
-            return null; 
+            throw new IllegalArgumentException("User with id " + id + " not found.");
         }
     }
 
@@ -102,5 +117,11 @@ public class UserController {
             e.printStackTrace();
         }
         return encryptedPassword;
+    }
+
+    // Method to validate the password strength against the defined pattern.
+    private boolean isValidPassword(String password) {
+        Pattern pattern = Pattern.compile(PASSWORD_STRENGTH_PATTERN);
+        return pattern.matcher(password).matches();
     }
 }
